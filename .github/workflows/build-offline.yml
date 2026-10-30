@@ -2,7 +2,7 @@ name: Build Paperless Offline AMD64
 on:
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-24.04
