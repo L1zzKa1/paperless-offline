@@ -1,0 +1,42 @@
+name: Build Paperless Offline AMD64
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pull and build linux/amd64 images
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull --platform linux/amd64 docker.io/valkey/valkey:9-alpine
+          docker pull --platform linux/amd64 docker.io/library/postgres:18
+          docker pull --platform linux/amd64 docker.io/gotenberg/gotenberg:8.37
+          docker pull --platform linux/amd64 docker.io/apache/tika:3.3.1.0
+          docker build --platform linux/amd64 -t paperless-ru:3.4.0 -f Dockerfile.paperless .
+          docker image inspect paperless-ru:3.4.0 --format '{{.Os}}/{{.Architecture}}'
+      - name: Export and split for transfer
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p transfer
+          docker save paperless-ru:3.4.0 docker.io/valkey/valkey:9-alpine docker.io/library/postgres:18 docker.io/gotenberg/gotenberg:8.37 docker.io/apache/tika:3.3.1.0 \
+            | gzip -1 | split -b 500M -d -a 3 - transfer/images.part-
+          sha256sum transfer/images.part-* > transfer/SHA256SUMS.txt
+          cp docker-compose.yml transfer/
+          cp start.ps1 transfer/
+          cp README.txt transfer/
+          ls -lh transfer/
+      - name: Publish downloadable release files
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release view offline-3.4.0 >/dev/null 2>&1 || \
+            gh release create offline-3.4.0 --title "Paperless-ngx 3.4.0 offline AMD64" --notes "Offline Docker images and startup files; no credentials included."
+          gh release upload offline-3.4.0 transfer/* --clobber
